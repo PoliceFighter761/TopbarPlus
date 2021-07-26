@@ -1134,6 +1134,8 @@ function Icon.mimic(coreIconToMimic)
 	icon:setName(iconName)
 
 	if coreIconToMimic == "Chat" then
+		-- HELP WANTED: How does one make this Deffered Event compatible??????
+
 		icon.deselectWhenOtherIconSelected = false
 		icon:setOrder(-1)
 		icon:setImage("rbxasset://textures/ui/TopBar/chatOff.png", "deselected")
