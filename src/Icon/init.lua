@@ -574,7 +574,9 @@ local tweenService = game:GetService("TweenService")
 local replicatedStorage = game:GetService("ReplicatedStorage")
 local debris = game:GetService("Debris")
 local userInputService = game:GetService("UserInputService")
+local contextActionService = game:GetService("ContextActionService")
 local httpService = game:GetService("HttpService") -- This is to generate GUIDs
+local chat = game:GetService("Chat") -- For chat permissions
 local runService = game:GetService("RunService")
 local textService = game:GetService("TextService")
 local guiService = game:GetService("GuiService")
@@ -1123,23 +1125,21 @@ end
 function Icon.mimic(coreIconToMimic)
 	local iconName = coreIconToMimic.."Mimic"
 	local icon = IconController.getIcon(iconName)
+	
 	if icon then
 		return icon
 	end
+
 	icon = Icon.new()
 	icon:setName(iconName)
 
 	if coreIconToMimic == "Chat" then
+		icon.deselectWhenOtherIconSelected = false
 		icon:setOrder(-1)
 		icon:setImage("rbxasset://textures/ui/TopBar/chatOff.png", "deselected")
 		icon:setImage("rbxasset://textures/ui/TopBar/chatOn.png", "selected")
 		icon:setImageYScale(0.625)
-		-- Since roblox's core gui api sucks melons I reverted to listening for signals within the chat modules
-		-- unfortunately however they've just gone and removed *these* signals therefore 
-		-- this mimic chat and similar features are now impossible to recreate accurately, so I'm disabling for now
-		-- ill go ahead and post a feature request; fingers crossed we get something by the next decade
 
-		--[[
 		-- Setup maid and cleanup actioon
 		local maid = icon._maid
 		icon._fakeChatMaid = maid:give(Maid.new())
@@ -1149,82 +1149,96 @@ function Icon.mimic(coreIconToMimic)
 		-- Tap into chat module
 		local chatMainModule = players.LocalPlayer.PlayerScripts:WaitForChild("ChatScript").ChatMain
 		local ChatMain = require(chatMainModule)
-		local function displayChatBar(visibility)
-			icon.ignoreVisibilityStateChange = true
-			ChatMain.CoreGuiEnabled:fire(visibility)
-			ChatMain.IsCoreGuiEnabled = false
-			ChatMain:SetVisible(visibility)
-			icon.ignoreVisibilityStateChange = nil
-		end
-		local function setIconEnabled(visibility)
-			icon.ignoreVisibilityStateChange = true
-			ChatMain.CoreGuiEnabled:fire(visibility)
-			icon:setEnabled(visibility)
-			starterGui:SetCoreGuiEnabled("Chat", false)
-			icon:deselect()
-			icon.updated:Fire()
-			icon.ignoreVisibilityStateChange = nil
-		end
-		-- Open chat via Slash key
-		icon._fakeChatMaid:give(userInputService.InputEnded:Connect(function(inputObject, gameProcessedEvent)
-			if gameProcessedEvent then
-				return "Another menu has priority"
-			elseif not(inputObject.KeyCode == Enum.KeyCode.Slash or inputObject.KeyCode == Enum.SpecialKey.ChatHotkey) then
-				return "No relavent key pressed"
-			elseif ChatMain.IsFocused() then
-				return "Chat bar already open"
-			elseif not icon.enabled then
-				return "Icon disabled"
+
+		-- Visbility changer
+		local function changeChatVisiblity(bool, supressCoreGuiChanged)
+
+			local newEnabled = bool
+			if supressCoreGuiChanged then
+				newEnabled = ChatMain.IsCoreGuiEnabled
 			end
-			ChatMain:FocusChatBar(true)
-			icon:select()
-		end))
-		-- ChatActive
-		icon._fakeChatMaid:give(ChatMain.VisibilityStateChanged:Connect(function(visibility)
-			if not icon.ignoreVisibilityStateChange then
-				if visibility == true then
-					icon:select()
+
+			icon.supressCoreGuiEnabled = 1
+			starterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, false)
+
+			if ChatMain.IsCoreGuiEnabled ~= newEnabled then
+				icon.supressCoreGuiEnabled = (icon.supressCoreGuiEnabled or 0) + 1
+
+				ChatMain.IsCoreGuiEnabled = newEnabled
+				ChatMain.CoreGuiEnabled:fire(newEnabled)
+			end
+			ChatMain:SetVisible(bool)
+		end
+
+		-- Topbar Change
+		icon._fakeChatMaid:give(IconController.topbarEnabledChanged:Connect(function(visibility)
+			if ChatMain.IsCoreGuiEnabled then
+				if visibility then
+					changeChatVisiblity(icon.isSelected, true)
 				else
-					icon:deselect()
+					changeChatVisiblity(false, true)
 				end
 			end
 		end))
-		-- Keep when other icons selected
-		icon.deselectWhenOtherIconSelected = false
+
+		-- SetCoreGuiEnabled change
+		icon._fakeChatMaid:give(ChatMain.CoreGuiEnabled:connect(function(visibility)
+			if not IconController.getTopbarEnabled() then
+				return
+			end
+
+			if icon.supressCoreGuiEnabled then
+				icon.supressCoreGuiEnabled -= 1
+
+				if icon.supressCoreGuiEnabled == 0 then
+					icon.supressCoreGuiEnabled = nil
+				end
+
+				return
+			end
+
+			icon:setEnabled(visibility)
+			changeChatVisiblity(visibility)
+		end))
+
+		-- ChatActive
+		icon._fakeChatMaid:give(ChatMain.VisibilityStateChanged:connect(function(visibility)
+			if not IconController.getTopbarEnabled() then
+				changeChatVisiblity(false, true)
+				return
+			end
+
+			if visibility then
+				icon:select()
+			else
+				icon:deselect()
+			end
+		end))
+
 		-- Mimic chat notifications
 		icon._fakeChatMaid:give(ChatMain.MessagesChanged:connect(function()
 			if ChatMain:GetVisibility() == true then
 				return "ChatWindow was open"
 			end
+
 			icon:notify(icon.selected)
 		end))
-		-- Mimic visibility when StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Chat, state) is called
-		coroutine.wrap(function()
-			runService.Heartbeat:Wait()
-			icon._fakeChatMaid:give(ChatMain.CoreGuiEnabled:connect(function(newState)
-				if icon.ignoreVisibilityStateChange then
-					return "ignoreVisibilityStateChange enabled"
-				end
-				local topbarEnabled = starterGui:GetCore("TopbarEnabled")
-				if topbarEnabled ~= IconController.previousTopbarEnabled then
-					return "SetCore was called instead of SetCoreGuiEnabled"
-				end
-				if not icon.enabled and userInputService:IsKeyDown(Enum.KeyCode.LeftShift) and userInputService:IsKeyDown(Enum.KeyCode.P) then
-					icon:setEnabled(true)
-				else
-					setIconEnabled(newState)
-				end
-			end))
-		end)()
+
+		-- Topbar Button Logic
+		local chatEnabled = starterGui:GetCoreGuiEnabled(Enum.CoreGuiType.Chat)
+
 		icon.deselected:Connect(function()
-			displayChatBar(false)
+			changeChatVisiblity(false, true)
 		end)
 		icon.selected:Connect(function()
-			displayChatBar(true)
+			changeChatVisiblity(true, true)
 		end)
-		setIconEnabled(starterGui:GetCoreGuiEnabled("Chat"))
-		--]]
+
+		if chatEnabled then
+			icon:select()
+		end
 	end
+
 	return icon
 end
 
