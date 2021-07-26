@@ -22,6 +22,13 @@ IconController.setTopbarEnabled(bool)
 When set to ``false``, hides all icons created with TopbarPlus. This can also be achieved by calling ``starterGui:SetCore("TopbarEnabled", false)``.
 
 ----
+#### getTopbarEnabled
+```lua
+local enabled = IconController.getTopbarEnabled()
+```
+Returns whether or not the Topbar is currently enabled.
+
+----
 #### setGap
 ```lua
 IconController.setGap(integer, alignment)
@@ -235,6 +242,7 @@ IconController.mimicCoreGui = true
 
 
 -- EVENTS
+IconController.topbarEnabledChanged = Signal.new()
 IconController.iconAdded = Signal.new()
 IconController.iconRemoved = Signal.new()
 IconController.controllerModeStarted = Signal.new()
@@ -613,6 +621,10 @@ function IconController.updateTopbar()
 	end)()
 end
 
+function IconController.getTopbarEnabled()
+	return TopbarPlusGui.TopbarContainer.Visible
+end
+
 function IconController.setTopbarEnabled(bool, forceBool)
 	if forceBool == nil then
 		forceBool = true
@@ -639,6 +651,7 @@ function IconController.setTopbarEnabled(bool, forceBool)
 					end)
 				end
 				TopbarPlusGui.TopbarContainer.Visible = true
+				IconController.topbarEnabledChanged:Fire(true)
 				TopbarPlusGui.TopbarContainer:TweenPosition(
 					UDim2.new(0,0,0,5 + STUPID_CONTROLLER_OFFSET),
 					Enum.EasingDirection.Out,
@@ -697,6 +710,7 @@ function IconController.setTopbarEnabled(bool, forceBool)
 				true,
 				function()
 					TopbarPlusGui.TopbarContainer.Visible = false
+					IconController.topbarEnabledChanged:Fire(false)
 				end
 			)
 			indicator.Image = "rbxassetid://5278151556"
@@ -715,6 +729,7 @@ function IconController.setTopbarEnabled(bool, forceBool)
 		else
 			topbarContainer.Visible = false
 		end
+		IconController.topbarEnabledChanged:Fire(topbarContainer.Visible)
 	end
 end
 
